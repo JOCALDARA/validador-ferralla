@@ -59,7 +59,7 @@ if archivo_planilla is not None:
                 - seg_cm: Lista con los números en centímetros leídos exclusivamente del dibujo/croquis visual de la izquierda (ej: [20, 760]).
                 - tall_kg: Kilos totales impresos que el taller le asigna a este bloque (ej: 242.82).
 
-                Genera tu respuesta estrictamente como una lista en formato JSON directa dentro de corchetes, utilizando exclusivamente comillas dobles. No añadas la palabra 'json' ni bloques markdown.
+                Genera tu respuesta estrictamente como una lista en formato JSON directa dentro de corchetes, utilizando comillas dobles. No añadas introducciones ni marcas markdown.
                 """
                 
                 response = client.chat.completions.create(
@@ -79,24 +79,46 @@ if archivo_planilla is not None:
                 else:
                     resultado_texto = str(response).strip()
                 
-                # Reparador de formato y limpieza por expresiones regulares
+                # REPARADOR MULTI-CAPA DE FORMATO JSON
+                # 1. Eliminamos saltos de línea molestos
                 resultado_texto = resultado_texto.replace("\n", " ").replace("\r", " ")
+                # 2. Limpiamos posibles bloques markdown generados por la IA
                 resultado_texto = re.sub(r"```json\s*", "", resultado_texto)
                 resultado_texto = re.sub(r"```\s*", "", resultado_texto)
-                resultado_texto = resultado_texto.replace("'", '"')
+                # 3. Corrección de comillas si la IA ha usado comillas simples en las propiedades
+                resultado_texto = re.sub(r"\'", '"', resultado_texto)
                 
+                # 4. Extracción robusta buscando la primera apertura y cierre de la lista JSON
                 match = re.search(r"\[\s*\{.*\}\s*\]", resultado_texto)
-                if not match:
-                    st.error("La IA ha devuelto una respuesta con formato inválido. Por favor, vuelve a pulsar Intro en el cajetín de la clave para reintentar la lectura.")
+                if match:
+                    json_limpio = match.group(0)
+                    try:
+                        datos_extraidos = json.loads(json_limpio)
+                    except Exception:
+                        # Si aun así falla el parseo estricto, aplicamos un reparador de emergencia de comillas sobre las claves
+                        json_reparado = re.sub(r"(\w+)\s*:", r'"\1":', json_limpio)
+                        # Eliminar posibles comas sueltas conflictivas antes de un cierre
+                        json_reparado = re.sub(r",\s*\]", "]", json_reparado)
+                        json_reparado = re.sub(r",\s*\}", "}", json_reparado)
+                        datos_extraidos = json.loads(json_reparado)
+                else:
+                    st.error("No se ha podido localizar una estructura de datos válida en la respuesta de la IA. Por favor, pulsa Intro en el cajetín de la clave para forzar un reintento limpio.")
                     st.stop()
-                    
-                datos_extraidos = json.loads(match.group(0))
                 
                 # 3. Procesamiento matemático automatizado
                 filas_auditoria = []
                 for item in datos_extraidos:
                     segmentos = item.get("seg_cm", [])
-                    segmentos_limpios = [float(x) for x in segmentos if str(x).replace('.','',1).isdigit() or isinstance(x, (int, float))]
+                    if not isinstance(segmentos, list):
+                        segmentos = []
+                    
+                    # Limpiamos y convertimos cada cota del dibujo a número flotante válido
+                    segmentos_limpios = []
+                    for x in segmentos:
+                        try:
+                            segmentos_limpios.append(float(x))
+                        except (ValueError, TypeError):
+                            continue
                     
                     desarrollo_ml = sum(segmentos_limpios) / 100.0
                     total_ml = desarrollo_ml * int(item.get("cant", 1))
