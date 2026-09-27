@@ -56,9 +56,10 @@ if archivo_planilla is not None:
                 - barra: El código o despiece (ej: 2016 20).
                 - diam: El diámetro numérico en mm (ej: 16).
                 - cant: La cantidad de barras (ej: 2).
-                - seg_cm: Lista con los números en centímetros leídos del croquis visual de la izquierda (ej: [20, 760]).
+                - seg_cm: Lista con los números en centímetros leídos exclusivamente del dibujo/croquis visual de la izquierda (ej: [20, 760]).
                 - tall_kg: Kilos totales impresos que el taller le asigna a este bloque (ej: 242.82).
-                Devuelve tu respuesta como una lista en formato JSON directa dentro de corchetes, sin texto adicional ni marcas markdown.
+
+                Genera tu respuesta como una lista en formato JSON directa dentro de corchetes, sin texto adicional ni marcas markdown.
                 """
                 
                 response = client.chat.completions.create(
@@ -86,13 +87,10 @@ if archivo_planilla is not None:
                     json_limpio = match.group(0)
                     datos_extraidos = json.loads(json_limpio)
                 else:
-                    # Datos de salvaguarda correctos si el formato falla
-                    datos_extraidos = [
-                        {"bloque": "REF.INF.X (A14-PNT.1)", "barra": "2016 20", "diam": 16, "cant": 2, "seg_cm":, "tall_kg": 242.82},
-                        {"bloque": "REF.INF.X (A14-PNT.1)", "barra": "1012 20", "diam": 12, "cant": 1, "seg_cm":, "tall_kg": 242.82}
-                    ]
+                    st.error("La IA no ha podido formatear los datos correctamente. Por favor, vuelve a intentarlo.")
+                    st.stop()
                 
-                # 3. Procesamiento matemático
+                # 3. Procesamiento matemático automatizado
                 filas_auditoria = []
                 for item in datos_extraidos:
                     segmentos = item.get("seg_cm", [])
@@ -102,32 +100,47 @@ if archivo_planilla is not None:
                     kg_contrato = round(total_ml * peso_u, 2)
                     
                     filas_auditoria.append({
-                        "Bloque/Zona": item.get("bloque", "General"), "Despiece": item.get("barra", "-"), "Ø": item.get("diam", 0),
-                        "Cant.": item.get("cant", 0), "Desarrollo Croquis (m)": desarrollo_ml, "Total Metros (ml)": total_ml,
-                        "Kg/ml Contrato": peso_u, "Kgs Reales Contrato": kg_contrato, "Subtotal Taller Bloque": item.get("tall_kg", 0.0)
+                        "Bloque/Zona": item.get("bloque", "General"),
+                        "Despiece": item.get("barra", "-"),
+                        "Ø": item.get("diam", 0),
+                        "Cant.": item.get("cant", 0),
+                        "Desarrollo Croquis (m)": desarrollo_ml,
+                        "Total Metros (ml)": total_ml,
+                        "Kg/ml Contrato": peso_u,
+                        "Kgs Reales Contrato": kg_contrato,
+                        "Subtotal Taller Bloque": item.get("tall_kg", 0.0)
                     })
                 
                 df_resultado = pd.DataFrame(filas_auditoria)
                 
-                # 4. Despliegue de Resultados
+                # 4. Despliegue de Resultados en Pantalla
                 st.markdown("### 📊 1. Auditoría Automatizada por Línea de Croquis")
                 st.dataframe(df_resultado, use_container_width=True, hide_index=True)
                 
                 st.markdown("### 🚨 2. Consolidación y Alertas de Desvíos de Acero")
-                resumen = df_resultado.groupby("Bloque/Zona").agg({"Kgs Reales Contrato": "sum", "Subtotal Taller Bloque": "first"}).reset_index()
+                resumen = df_resultado.groupby("Bloque/Zona").agg({
+                    "Kgs Reales Contrato": "sum",
+                    "Subtotal Taller Bloque": "first"
+                }).reset_index()
                 resumen["Desvío (Kg)"] = round(resumen["Subtotal Taller Bloque"] - resumen["Kgs Reales Contrato"], 2)
                 
                 def pintar_alertas(val):
                     return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;' if abs(val) > umbral else 'background-color: #e6ffe6; color: #006600;'
+                
                 st.dataframe(resumen.style.map(pintar_alertas, subset=["Desvío (Kg)"]), use_container_width=True, hide_index=True)
                 
-                # 5. Descarga a Excel
+                # 5. Descarga de resultados a Excel
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine="openpyxl") as w:
                     df_resultado.to_excel(w, sheet_name="Detalle_Barras", index=False)
                     resumen.to_excel(w, sheet_name="Resumen_Desvios", index=False)
                     
-                st.download_button(label="📥 Descargar Auditoría Completa en Excel", data=buffer.getvalue(), file_name="auditoria_automatica_ferralla.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                st.download_button(
+                    label="📥 Descargar Auditoría Completa en Excel",
+                    data=buffer.getvalue(),
+                    file_name="auditoria_automatica_ferralla.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
                 
             except Exception as e:
-                st.error(f"Error durante el procesamiento: {e}")
+                st.error(f"Error durante el procesamiento del documento: {e}")
