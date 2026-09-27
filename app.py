@@ -59,7 +59,7 @@ if archivo_planilla is not None:
                 - seg_cm: Lista con los números en centímetros leídos exclusivamente del dibujo/croquis visual de la izquierda (ej: [20, 760]).
                 - tall_kg: Kilos totales impresos que el taller le asigna a este bloque (ej: 242.82).
 
-                Genera tu respuesta como una lista en formato JSON directa dentro de corchetes, utilizando exclusivamente comillas dobles tanto para las claves como para los valores de texto. No añadas la palabra 'json' ni bloques markdown.
+                Genera tu respuesta estrictamente como una lista en formato JSON directa dentro de corchetes, utilizando exclusivamente comillas dobles. No añadas la palabra 'json' ni bloques markdown.
                 """
                 
                 response = client.chat.completions.create(
@@ -79,34 +79,23 @@ if archivo_planilla is not None:
                 else:
                     resultado_texto = str(response).strip()
                 
-                # REPARADOR DE SEGURIDAD AUTOMÁTICO DE JSON
-                # Eliminamos saltos de línea y limpiamos bloques markdown si la IA los puso por error
+                # Reparador de formato y limpieza por expresiones regulares
                 resultado_texto = resultado_texto.replace("\n", " ").replace("\r", " ")
                 resultado_texto = re.sub(r"```json\s*", "", resultado_texto)
                 resultado_texto = re.sub(r"```\s*", "", resultado_texto)
-                
-                # Reemplazar comillas simples por comillas dobles si las hubiera
                 resultado_texto = resultado_texto.replace("'", '"')
                 
-                # Extraemos estrictamente la estructura del JSON entre corchetes [ ... ]
                 match = re.search(r"\[\s*\{.*\}\s*\]", resultado_texto)
-                
-                if match:
-                    json_limpio = match.group(0)
-                    datos_extraidos = json.loads(json_limpio)
-                else:
-                    # RED DE SEGURIDAD INTERNA PERFECTAMENTE FORMATEADA CON LOS DATOS REALES DE TU HOJA 2
-                    datos_extraidos = [
-                        {"bloque": "REF.INF.X (A14-PNT.1)", "barra": "2016 20", "diam": 16, "cant": 2, "seg_cm":, "tall_kg": 242.82},
-                        {"bloque": "REF.INF.X (A14-PNT.1)", "barra": "1012 20", "diam": 12, "cant": 1, "seg_cm":, "tall_kg": 242.82},
-                        {"bloque": "REF.INF.X (B17-F19)", "barra": "2020 20", "diam": 20, "cant": 2, "seg_cm":, "tall_kg": 198.99}
-                    ]
+                if not match:
+                    st.error("La IA ha devuelto una respuesta con formato inválido. Por favor, vuelve a pulsar Intro en el cajetín de la clave para reintentar la lectura.")
+                    st.stop()
+                    
+                datos_extraidos = json.loads(match.group(0))
                 
                 # 3. Procesamiento matemático automatizado
                 filas_auditoria = []
                 for item in datos_extraidos:
                     segmentos = item.get("seg_cm", [])
-                    # Asegurar que los segmentos sean procesados como números flotantes válidos
                     segmentos_limpios = [float(x) for x in segmentos if str(x).replace('.','',1).isdigit() or isinstance(x, (int, float))]
                     
                     desarrollo_ml = sum(segmentos_limpios) / 100.0
